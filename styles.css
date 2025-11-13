@@ -103,6 +103,23 @@ button:hover {
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
 }
 
+.instructions-title {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.instructions-list {
+  margin: 0 0 2rem;
+  padding-left: 1.5rem;
+  font-weight: 500;
+  font-size: 1.1rem;
+}
+
+#instructions p {
+  font-size: 1.05rem;
+}
+
 .panel-form {
   display: flex;
   flex-direction: column;
@@ -409,6 +426,18 @@ select {
   color: #f87171;
 }
 
+.schedule-table .add-day-slot-btn {
+  background: none;
+  color: #22c55e;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.schedule-table .add-day-slot-btn:hover {
+  color: #4ade80;
+}
+
 .schedule-table col.col-start,
 .schedule-table col.col-end {
   width: 12%;
@@ -543,6 +572,19 @@ select {
 .groups-table .event-row[data-event="3bld"] td,
 .schedule-table .event-row[data-event="3bld"] td {
   background: hsla(0, 80%, 65%, 0.12);
+}
+
+.schedule-table .schedule-row.out-of-order-row td {
+  background: rgba(255, 77, 79, 0.2) !important;
+}
+
+.schedule-table .schedule-row.out-of-order-row select,
+.schedule-table .schedule-row.out-of-order-row input {
+  border-color: rgba(255, 77, 79, 0.5);
+}
+
+.schedule-table .schedule-row.out-of-order-row .readonly-cell {
+  color: #ffe4e6;
 }
 
 footer {

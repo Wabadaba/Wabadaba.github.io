@@ -18,14 +18,14 @@
       </nav>
 
       <section id="instructions" class="tab-panel active" role="tabpanel">
-        <h2>Getting Started</h2>
-        <ol>
-          <li>Define high level competition data (name, venue, dates).</li>
-          <li>Set up rounds and events along with capacity constraints.</li>
-          <li>Divide competitors into groups.</li>
-          <li>Generate the schedule, review, then export as CSV.</li>
+        <h2 class="instructions-title">Dylan's Schedule Maker 2.0</h2>
+        <ol class="instructions-list">
+          <li>Fill out event and competition info in "Rounds", then click "Generate Groups".</li>
+          <li>Tweak timings in "Groups", then click "Generate Schedule".</li>
+          <li>Build your schedule.</li>
         </ol>
-        <p>You can flesh these steps out once requirements are finalized.</p>
+        <p>All constants can be found in the Settings tab if you want to make any changes. Favorites competitions not currently supported. Simul events not currently supported.</p>
+        <p>Click the button below to get started.</p>
         <button id="new-schedule-btn" type="button">Create New Schedule</button>
       </section>
 
@@ -259,15 +259,11 @@
           <button id="generate-schedule-from-groups" type="button">
             Generate Schedule
           </button>
-          <button id="download-schedule-csv" type="button" class="secondary">
-            Download Schedule CSV
-          </button>
         </div>
         <div id="schedule-builder" class="schedule-builder">
           <div class="schedule-header">
             <h3>Schedule Builder</h3>
             <div class="schedule-actions">
-              <button id="add-schedule-row" type="button">Add Event Slot</button>
               <div class="special-control">
                 <select id="special-block-select">
                   <option value="">Add special block…</option>
@@ -276,6 +272,7 @@
                   <option value="lunch">Lunch (60m)</option>
                   <option value="break">Break (20m)</option>
                   <option value="awards">Awards / Cleanup (60m)</option>
+                  <option value="custom">Other…</option>
                 </select>
                 <button id="add-special-block" type="button">Add</button>
               </div>
@@ -287,6 +284,11 @@
           <div id="schedule-table-wrapper" class="collection-placeholder">
             <p>Add events to begin composing the schedule.</p>
           </div>
+        </div>
+        <div class="actions-row">
+          <button id="download-schedule-csv" type="button" class="secondary">
+            Download Schedule CSV
+          </button>
         </div>
       </section>
 

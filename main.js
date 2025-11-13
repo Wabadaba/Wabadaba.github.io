@@ -82,7 +82,6 @@ const settingsForm = document.getElementById("settings-form");
 const scheduleBuilderWrapper = document.getElementById("schedule-table-wrapper");
 const generateGroupsBtn = document.getElementById("generate-groups");
 const generateScheduleBtn = document.getElementById("generate-schedule-from-groups");
-const addScheduleRowBtn = document.getElementById("add-schedule-row");
 const clearScheduleBtn = document.getElementById("clear-schedule");
 const specialBlockSelect = document.getElementById("special-block-select");
 const addSpecialBlockBtn = document.getElementById("add-special-block");
@@ -367,7 +366,7 @@ function initGenerateGroupsButton() {
     state.generatedGroups = rows;
     persistAppState();
     renderGroupsTable();
-    setActiveTab("rounds");
+    setActiveTab("groups");
   });
 }
 
@@ -429,6 +428,7 @@ function buildGroupRows() {
         eventId,
         eventName: getEventLabel(eventId),
         roundLabel: getRoundLabel(roundsCount, roundIndex),
+        roundIndex,
         competitors: favoritesMode ? "" : numericCompetitors,
         groups: calculatedGroups,
         timePerGroup,
@@ -553,7 +553,10 @@ function renderGroupRow(row, index) {
           value="${timePerGroupValue}"
         />
       </td>
-      <td class="number-cell">${formatNumber(row.ratio, 2)}</td>
+      <td class="number-cell ratio-cell" style="color: ${getRatioColor(row.ratio)}">${formatNumber(
+        row.ratio,
+        2
+      )}</td>
       <td class="number-cell">${formatNumber(row.competitorsPerGroup, 1)}</td>
       <td>
         <input
@@ -632,17 +635,6 @@ function initScheduleBuilderControls() {
     renderScheduleBuilder();
   });
 
-  addScheduleRowBtn?.addEventListener("click", () => {
-    if (!state.generatedGroups.length) {
-      alert("Generate groups first.");
-      return;
-    }
-    state.scheduleRows.push(createEventScheduleRow());
-    persistAppState();
-    recalculateScheduleTimes();
-    renderScheduleBuilder();
-  });
-
   clearScheduleBtn?.addEventListener("click", () => {
     state.scheduleRows = [];
     persistAppState();
@@ -655,7 +647,31 @@ function initScheduleBuilderControls() {
       alert("Select a special block to add.");
       return;
     }
-    state.scheduleRows.push(createSpecialScheduleRow(key));
+
+    if (key === "custom") {
+      const nameInput = prompt("Enter a name for this block:");
+      if (nameInput === null) {
+        return;
+      }
+      const label = nameInput.trim();
+      if (!label) {
+        alert("Custom blocks need a name.");
+        return;
+      }
+      const durationInput = prompt("Enter the duration in minutes:");
+      if (durationInput === null) {
+        return;
+      }
+      const duration = Math.max(1, Math.round(Number(durationInput)));
+      if (!Number.isFinite(duration)) {
+        alert("Enter a valid duration in minutes.");
+        return;
+      }
+      state.scheduleRows.push(createSpecialScheduleRow("custom", { label, duration }));
+    } else {
+      state.scheduleRows.push(createSpecialScheduleRow(key));
+    }
+
     if (specialBlockSelect) {
       specialBlockSelect.value = "";
     }
@@ -672,6 +688,12 @@ function initScheduleBuilderControls() {
   });
 
   scheduleBuilderWrapper?.addEventListener("click", (event) => {
+    const addBtn = event.target.closest("[data-add-slot-day]");
+    if (addBtn) {
+      const dayValue = Number(addBtn.dataset.addSlotDay);
+      handleAddEventSlot(dayValue);
+      return;
+    }
     const deleteBtn = event.target.closest("[data-delete-row]");
     if (deleteBtn) {
       const rowId = deleteBtn.dataset.deleteRow;
@@ -708,14 +730,29 @@ function createEventScheduleRow() {
   };
 }
 
-function createSpecialScheduleRow(key) {
-  const config = SPECIAL_BLOCKS[key] || { label: "Special", duration: 0 };
+function handleAddEventSlot(day) {
+  if (!state.generatedGroups.length) {
+    alert("Generate groups first.");
+    return;
+  }
+  const slot = createEventScheduleRow();
+  slot.day = clampDay(day);
+  state.scheduleRows.push(slot);
+  persistAppState();
+  recalculateScheduleTimes();
+  renderScheduleBuilder();
+}
+
+function createSpecialScheduleRow(key, overrides = {}) {
+  const config = SPECIAL_BLOCKS[key] || {};
+  const label = overrides.label ?? config.label ?? "Special";
+  const duration = overrides.duration ?? config.duration ?? 0;
   return {
     id: generateId("special-slot"),
     type: "special",
     specialKey: key,
-    label: config.label,
-    durationMinutes: config.duration,
+    label,
+    durationMinutes: duration,
     day: clampDay(1),
   };
 }
@@ -812,7 +849,33 @@ function renderScheduleBuilder() {
   attachDayDropZones();
 }
 
+function getOutOfOrderScheduleRowIds() {
+  const perEvent = new Map();
+  const invalid = new Set();
+
+  state.scheduleRows.forEach((row) => {
+    if (row.type !== "event") {
+      return;
+    }
+    const data = getScheduleRowData(row);
+    if (!data || data.roundIndex === undefined || data.roundIndex === null) {
+      return;
+    }
+    const records = perEvent.get(data.eventId) || [];
+    const conflicts = records.filter((entry) => entry.roundIndex > data.roundIndex);
+    if (conflicts.length) {
+      conflicts.forEach((entry) => invalid.add(entry.rowId));
+      invalid.add(row.id);
+    }
+    records.push({ rowId: row.id, roundIndex: data.roundIndex });
+    perEvent.set(data.eventId, records);
+  });
+
+  return invalid;
+}
+
 function renderScheduleRowsWithHeaders() {
+  const invalidRowIds = getOutOfOrderScheduleRowIds();
   const totalDays = state.competitionInfo.eventDays || 1;
   const rowsByDay = Array.from({ length: totalDays }, () => []);
   state.scheduleRows.forEach((row) => {
@@ -830,7 +893,7 @@ function renderScheduleRowsWithHeaders() {
         `<tr class="day-empty" data-drop-day="${day}"><td colspan="12">No items planned for this day.</td></tr>`
       );
     } else {
-      entries.forEach((row) => parts.push(renderScheduleRow(row)));
+      entries.forEach((row) => parts.push(renderScheduleRow(row, invalidRowIds)));
     }
   }
   return parts.join("");
@@ -840,27 +903,39 @@ function renderDayHeaderRow(day) {
   const startLabel = getDayStartLabel(day);
   return `
     <tr class="day-header" data-drop-day="${day}">
-      <td colspan="12">Day ${day} · Start ${startLabel}</td>
+      <td colspan="11">Day ${day} · Start ${startLabel}</td>
+      <td class="delete-cell">
+        <button
+          type="button"
+          class="add-day-slot-btn"
+          aria-label="Add event slot for Day ${day}"
+          data-add-slot-day="${day}"
+        >
+          +
+        </button>
+      </td>
     </tr>
   `;
 }
 
-function renderScheduleRow(row) {
+function renderScheduleRow(row, invalidRowIds) {
   const startLabel =
     row.startMinutes !== undefined ? timeFromMinutes(row.startMinutes) : "—";
   const endLabel = row.endMinutes !== undefined ? timeFromMinutes(row.endMinutes) : "—";
   const classes = ["schedule-row"];
+  if (invalidRowIds?.has(row.id)) {
+    classes.push("out-of-order-row");
+  }
   let attr = "";
   let body = "";
 
   if (row.type === "special") {
     classes.push("special-row");
-    const config = SPECIAL_BLOCKS[row.specialKey] || {
-      label: row.label || "Special",
-      duration: row.durationMinutes || 0,
-    };
+    const fallbackConfig = SPECIAL_BLOCKS[row.specialKey] || {};
+    const label = row.label || fallbackConfig.label || "Special";
+    const durationValue = row.durationMinutes ?? fallbackConfig.duration ?? 0;
     body = `
-      <td>${config.label}</td>
+      <td>${label}</td>
       <td class="readonly-cell">—</td>
       <td class="readonly-cell">—</td>
       <td class="readonly-cell">—</td>
@@ -871,10 +946,9 @@ function renderScheduleRow(row) {
           step="5"
           data-special-duration
           data-row-id="${row.id}"
-          value="${row.durationMinutes ?? config.duration}"
+          value="${durationValue}"
         />
       </td>
-      <td class="readonly-cell">—</td>
       <td class="readonly-cell">—</td>
       <td class="readonly-cell">—</td>
       <td class="readonly-cell">—</td>
@@ -911,7 +985,10 @@ function renderScheduleRow(row) {
       <td class="readonly-cell">${data?.groups ?? "—"}</td>
       <td class="readonly-cell">${formatNumber(data?.timeTotal, 0)}</td>
       <td class="readonly-cell">${formatNumber(data?.timePerGroup, 0)}</td>
-      <td class="readonly-cell">${formatNumber(data?.ratio, 2)}</td>
+      <td class="readonly-cell ratio-cell" style="color: ${getRatioColor(data?.ratio)}">${formatNumber(
+        data?.ratio,
+        2
+      )}</td>
       <td class="readonly-cell">${formatNumber(data?.competitorsPerGroup, 1)}</td>
       <td class="readonly-cell">${data?.stations ?? "—"}</td>
     `;
@@ -1110,6 +1187,23 @@ function formatNumber(value, fractionDigits = 0) {
     return "—";
   }
   return numeric.toFixed(fractionDigits);
+}
+
+function getRatioColor(value) {
+  const ratio = Number(value);
+  if (!Number.isFinite(ratio) || ratio <= 1.8) {
+    return "#ffffff";
+  }
+  if (ratio >= 2.3) {
+    return "#ff4d4f";
+  }
+  const factor = (ratio - 1.8) / 0.5;
+  const startColor = [255, 255, 255];
+  const endColor = [255, 77, 79];
+  const channels = startColor.map((start, index) =>
+    Math.round(start + (endColor[index] - start) * factor)
+  );
+  return `rgb(${channels.join(",")})`;
 }
 
 function buildScheduleCsv() {
