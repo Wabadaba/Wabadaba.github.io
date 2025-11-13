@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cube Comp Schedule Maker</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header></header>
+
+    <main>
+      <nav class="tab-list" role="tablist" aria-label="Schedule builder sections">
+        <button class="tab active" role="tab" aria-selected="true" data-tab="instructions">Instructions</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="rounds">Rounds</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="groups">Groups</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="settings">Settings</button>
+      </nav>
+
+      <section id="instructions" class="tab-panel active" role="tabpanel">
+        <h2>Getting Started</h2>
+        <ol>
+          <li>Define high level competition data (name, venue, dates).</li>
+          <li>Set up rounds and events along with capacity constraints.</li>
+          <li>Divide competitors into groups.</li>
+          <li>Generate the schedule, review, then export as CSV.</li>
+        </ol>
+        <p>You can flesh these steps out once requirements are finalized.</p>
+        <button id="new-schedule-btn" type="button">Create New Schedule</button>
+      </section>
+
+      <section id="rounds" class="tab-panel" role="tabpanel" hidden>
+        <h2>Rounds</h2>
+        <div class="subsection">
+          <div class="subsection-header">
+            <h3>Events</h3>
+            <p>Select how many rounds you plan to run for each event.</p>
+          </div>
+          <div class="events-grid">
+            <label>
+              <span>3x3</span>
+              <select data-event-select="3x3">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>2x2</span>
+              <select data-event-select="2x2">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>Pyra</span>
+              <select data-event-select="pyra">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>Skewb</span>
+              <select data-event-select="skewb">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>4x4</span>
+              <select data-event-select="4x4">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>5x5</span>
+              <select data-event-select="5x5">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>6x6</span>
+              <select data-event-select="6x6">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>7x7</span>
+              <select data-event-select="7x7">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>OH</span>
+              <select data-event-select="oh">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>Mega</span>
+              <select data-event-select="mega">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>SQ1</span>
+              <select data-event-select="sq1">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>Clock</span>
+              <select data-event-select="clock">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <label>
+              <span>3BLD</span>
+              <select data-event-select="3bld">
+                <option value="0" selected>0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="subsection">
+          <div class="subsection-header">
+            <h3>Competition Info</h3>
+            <p>These inputs will guide group sizing when you generate groups.</p>
+          </div>
+          <form id="competition-form" class="panel-form">
+            <div class="form-row">
+              <label>
+                Competitor Count
+                <input
+                  type="number"
+                  name="competitorCount"
+                  min="1"
+                  placeholder="120"
+                  required
+                />
+              </label>
+              <label class="time-select">
+                Venue Time
+                <div class="time-inputs">
+                  <select name="venueHours" aria-label="Venue hours">
+                    <option value="0">0h</option>
+                    <option value="1">1h</option>
+                    <option value="2">2h</option>
+                    <option value="3">3h</option>
+                    <option value="4">4h</option>
+                    <option value="5">5h</option>
+                    <option value="6">6h</option>
+                    <option value="7">7h</option>
+                    <option value="8">8h</option>
+                    <option value="9">9h</option>
+                    <option value="10">10h</option>
+                    <option value="11">11h</option>
+                    <option value="12">12h</option>
+                  </select>
+                  <select name="venueMinutes" aria-label="Venue minutes">
+                    <option value="0">00m</option>
+                    <option value="15">15m</option>
+                    <option value="30">30m</option>
+                    <option value="45">45m</option>
+                  </select>
+                </div>
+              </label>
+              <label>
+                Competition Type
+                <select name="competitionType">
+                  <option value="Local">Local</option>
+                  <option value="Regional">Regional</option>
+                  <option value="Favorites">Favorites</option>
+                </select>
+              </label>
+              <label>
+                Stations
+                <input
+                  type="number"
+                  name="stations"
+                  min="1"
+                  placeholder="12"
+                  required
+                />
+              </label>
+              <label>
+                Event Days
+                <select name="eventDays" required>
+                  <option value="1" selected>1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
+              </label>
+            </div>
+            <div id="day-start-times" class="day-times"></div>
+          </form>
+        </div>
+
+        <div class="actions-row">
+          <button id="generate-groups" type="button">Generate Groups</button>
+        </div>
+      </section>
+
+      <section id="groups" class="tab-panel" role="tabpanel" hidden>
+        <h2>Groups</h2>
+        <div id="groups-table" class="collection-placeholder">
+          <p>Click "Generate Groups" to build a schedule preview.</p>
+        </div>
+        <div class="actions-row">
+          <button id="generate-schedule-from-groups" type="button">
+            Generate Schedule
+          </button>
+          <button id="download-schedule-csv" type="button" class="secondary">
+            Download Schedule CSV
+          </button>
+        </div>
+        <div id="schedule-builder" class="schedule-builder">
+          <div class="schedule-header">
+            <h3>Schedule Builder</h3>
+            <div class="schedule-actions">
+              <button id="add-schedule-row" type="button">Add Event Slot</button>
+              <div class="special-control">
+                <select id="special-block-select">
+                  <option value="">Add special block…</option>
+                  <option value="setup">Setup (60m)</option>
+                  <option value="tutorial">Tutorial (25m)</option>
+                  <option value="lunch">Lunch (60m)</option>
+                  <option value="break">Break (20m)</option>
+                  <option value="awards">Awards / Cleanup (60m)</option>
+                </select>
+                <button id="add-special-block" type="button">Add</button>
+              </div>
+              <button id="clear-schedule" type="button" class="secondary">
+                Clear Schedule
+              </button>
+            </div>
+          </div>
+          <div id="schedule-table-wrapper" class="collection-placeholder">
+            <p>Add events to begin composing the schedule.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="settings" class="tab-panel" role="tabpanel" hidden>
+        <h2>Settings</h2>
+        <form id="settings-form" class="panel-form compact-form">
+          <div class="subsection compact">
+            <div class="subsection-header">
+              <h3>Event Timing & Participation</h3>
+            </div>
+            <div class="settings-toolbar">
+              <label>
+                Max Ratio
+                <input
+                  type="number"
+                  min="0.1"
+                  step="0.05"
+                  data-global-setting="maxRatio"
+                  placeholder="2.1"
+                />
+              </label>
+            </div>
+            <div class="settings-table-wrapper">
+              <table class="settings-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Time / Group (min)</th>
+                    <th>L %</th>
+                    <th>R %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>3x3</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="3x3" data-event-setting-field="timePerGroup" placeholder="20" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="3x3" data-event-setting-field="localPercent" placeholder="100" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="3x3" data-event-setting-field="regionalPercent" placeholder="100" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>2x2</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="2x2" data-event-setting-field="timePerGroup" placeholder="17" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="2x2" data-event-setting-field="localPercent" placeholder="81" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="2x2" data-event-setting-field="regionalPercent" placeholder="92" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Pyra</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="pyra" data-event-setting-field="timePerGroup" placeholder="17" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="pyra" data-event-setting-field="localPercent" placeholder="64" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="pyra" data-event-setting-field="regionalPercent" placeholder="81" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Skewb</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="skewb" data-event-setting-field="timePerGroup" placeholder="17" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="skewb" data-event-setting-field="localPercent" placeholder="58" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="skewb" data-event-setting-field="regionalPercent" placeholder="70" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>4x4</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="4x4" data-event-setting-field="timePerGroup" placeholder="25" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="4x4" data-event-setting-field="localPercent" placeholder="60" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="4x4" data-event-setting-field="regionalPercent" placeholder="70" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>5x5</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="5x5" data-event-setting-field="timePerGroup" placeholder="25" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="5x5" data-event-setting-field="localPercent" placeholder="48" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="5x5" data-event-setting-field="regionalPercent" placeholder="53" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>6x6</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="6x6" data-event-setting-field="timePerGroup" placeholder="25" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="6x6" data-event-setting-field="localPercent" placeholder="32" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="6x6" data-event-setting-field="regionalPercent" placeholder="36" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>7x7</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="7x7" data-event-setting-field="timePerGroup" placeholder="25" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="7x7" data-event-setting-field="localPercent" placeholder="33" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="7x7" data-event-setting-field="regionalPercent" placeholder="32" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>OH</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="oh" data-event-setting-field="timePerGroup" placeholder="20" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="oh" data-event-setting-field="localPercent" placeholder="60" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="oh" data-event-setting-field="regionalPercent" placeholder="64" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Mega</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="mega" data-event-setting-field="timePerGroup" placeholder="25" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="mega" data-event-setting-field="localPercent" placeholder="49" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="mega" data-event-setting-field="regionalPercent" placeholder="50" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>SQ1</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="sq1" data-event-setting-field="timePerGroup" placeholder="21" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="sq1" data-event-setting-field="localPercent" placeholder="39" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="sq1" data-event-setting-field="regionalPercent" placeholder="45" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Clock</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="clock" data-event-setting-field="timePerGroup" placeholder="21" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="clock" data-event-setting-field="localPercent" placeholder="56" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="clock" data-event-setting-field="regionalPercent" placeholder="53" />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>3BLD</td>
+                    <td>
+                      <input type="number" min="1" step="1" data-event-id="3bld" data-event-setting-field="timePerGroup" placeholder="20" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="3bld" data-event-setting-field="localPercent" placeholder="31" />
+                    </td>
+                    <td>
+                      <input type="number" min="0" max="100" step="1" data-event-id="3bld" data-event-setting-field="regionalPercent" placeholder="21" />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="actions-row">
+            <button type="button" id="reset-settings" class="secondary">Reset Defaults</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <footer></footer>
+
+    <script src="./main.js" defer></script>
+  </body>
+</html>
