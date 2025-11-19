@@ -27,6 +27,8 @@
         <p>All constants can be found in the Settings tab if you want to make any changes. Favorites competitions not currently supported. Simul events not currently supported.</p>
         <p>Click the button below to get started.</p>
         <button id="new-schedule-btn" type="button">Create New Schedule</button>
+        <button id="upload-schedule-btn" type="button" class="secondary">Upload Schedule CSV</button>
+        <input type="file" id="upload-schedule-input" accept=".csv,text/csv" hidden />
       </section>
 
       <section id="rounds" class="tab-panel" role="tabpanel" hidden>
@@ -307,6 +309,13 @@
                   data-global-setting="maxRatio"
                   placeholder="2.1"
                 />
+              </label>
+              <label>
+                Time Format
+                <select data-global-setting="timeFormat">
+                  <option value="24h">24-hour</option>
+                  <option value="ampm">12-hour (AM/PM)</option>
+                </select>
               </label>
             </div>
             <div class="settings-table-wrapper">

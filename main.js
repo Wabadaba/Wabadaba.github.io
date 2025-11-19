@@ -37,6 +37,7 @@ const INTERNAL_TIMING = {
 
 const GLOBAL_SETTING_DEFAULTS = {
   maxRatio: 2.1,
+  timeFormat: "24h",
 };
 
 const SPECIAL_BLOCKS = {
@@ -50,6 +51,7 @@ const SPECIAL_BLOCKS = {
 const EVENT_SETTINGS_STORAGE_KEY = "schedule-event-settings";
 const GLOBAL_SETTINGS_STORAGE_KEY = "schedule-global-settings";
 const APP_STATE_STORAGE_KEY = "schedule-app-state-v1";
+const SCHEDULE_CSV_VERSION = 1;
 
 const DEFAULT_COMPETITION_INFO = {
   competitorCount: "",
@@ -64,8 +66,8 @@ const DEFAULT_COMPETITION_INFO = {
 const state = {
   eventRounds: createDefaultEventRounds(),
   competitionInfo: createDefaultCompetitionInfo(),
-  eventSettings: cloneEventSettingDefaults(),
-  globalSettings: { ...GLOBAL_SETTING_DEFAULTS },
+  eventSettings: loadEventSettings(),
+  globalSettings: loadGlobalSettings(),
   generatedGroups: [],
   scheduleRows: [],
 };
@@ -90,6 +92,8 @@ const eventSettingInputs = document.querySelectorAll("[data-event-setting-field]
 const globalSettingInputs = document.querySelectorAll("[data-global-setting]");
 const resetSettingsBtn = document.getElementById("reset-settings");
 const newScheduleBtn = document.getElementById("new-schedule-btn");
+const uploadScheduleBtn = document.getElementById("upload-schedule-btn");
+const uploadScheduleInput = document.getElementById("upload-schedule-input");
 
 let draggedScheduleRowId = null;
 let pendingGroupFocus = null;
@@ -104,6 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initScheduleBuilderControls();
   renderGroupsTable();
   newScheduleBtn?.addEventListener("click", resetAllData);
+  initScheduleUploadControls();
 });
 
 dayStartTimesContainer?.addEventListener("input", (event) => {
@@ -306,6 +311,7 @@ function initEventSettingsControls() {
     hydrateGlobalSettingsControls();
     saveEventSettings();
     saveGlobalSettings();
+    renderScheduleBuilder();
   });
 }
 
@@ -327,13 +333,21 @@ function hydrateEventSettingsTable() {
 function initGlobalSettingsControls() {
   hydrateGlobalSettingsControls();
   globalSettingInputs.forEach((input) => {
-    input.addEventListener("input", () => {
+    const applyChange = () => {
       const key = input.dataset.globalSetting;
       if (!key) return;
-      const numericValue = Math.max(0, Number(input.value) || 0);
-      state.globalSettings[key] = numericValue;
+      const value = getGlobalSettingInputValue(input);
+      state.globalSettings[key] = value;
       saveGlobalSettings();
-    });
+      if (key === "timeFormat") {
+        renderScheduleBuilder();
+      }
+    };
+    if (input instanceof HTMLSelectElement) {
+      input.addEventListener("change", applyChange);
+    } else {
+      input.addEventListener("input", applyChange);
+    }
   });
 }
 
@@ -343,8 +357,44 @@ function hydrateGlobalSettingsControls() {
     if (!key) return;
     const value =
       state.globalSettings[key] ?? GLOBAL_SETTING_DEFAULTS[key] ?? GLOBAL_SETTING_DEFAULTS.maxRatio;
-    input.value = String(value);
+    setGlobalSettingInputValue(input, value);
   });
+}
+
+function getGlobalSettingInputValue(input) {
+  if (input instanceof HTMLInputElement) {
+    if (input.type === "number") {
+      const numericValue = Number(input.value);
+      if (!Number.isFinite(numericValue)) {
+        return 0;
+      }
+      return Math.max(0, numericValue);
+    }
+    if (input.type === "checkbox") {
+      return input.checked;
+    }
+    return input.value;
+  }
+  if (input instanceof HTMLSelectElement) {
+    return input.value;
+  }
+  return input.value;
+}
+
+function setGlobalSettingInputValue(input, value) {
+  if (input instanceof HTMLInputElement) {
+    if (input.type === "checkbox") {
+      input.checked = Boolean(value);
+      return;
+    }
+    input.value = String(value);
+    return;
+  }
+  if (input instanceof HTMLSelectElement) {
+    input.value = String(value);
+    return;
+  }
+  input.value = String(value);
 }
 
 function initGenerateGroupsButton() {
@@ -721,6 +771,44 @@ function initScheduleBuilderControls() {
   });
 }
 
+function initScheduleUploadControls() {
+  if (!uploadScheduleBtn || !uploadScheduleInput) {
+    return;
+  }
+  uploadScheduleBtn.addEventListener("click", () => {
+    uploadScheduleInput.value = "";
+    uploadScheduleInput.click();
+  });
+  uploadScheduleInput.addEventListener("change", () => {
+    const file = uploadScheduleInput.files?.[0];
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      const text = typeof reader.result === "string" ? reader.result : "";
+      try {
+        importScheduleFromCsv(text);
+      } catch (error) {
+        console.error("Failed to import schedule CSV.", error);
+        alert(
+          error instanceof Error
+            ? error.message
+            : "Unable to import this CSV. Please ensure it was exported from this tool."
+        );
+      } finally {
+        uploadScheduleInput.value = "";
+      }
+    });
+    reader.addEventListener("error", () => {
+      console.error("Failed to read uploaded CSV file.");
+      alert("Unable to read the selected file. Please try again.");
+      uploadScheduleInput.value = "";
+    });
+    reader.readAsText(file);
+  });
+}
+
 function createEventScheduleRow() {
   return {
     id: generateId("event-slot"),
@@ -853,7 +941,7 @@ function getOutOfOrderScheduleRowIds() {
   const perEvent = new Map();
   const invalid = new Set();
 
-  state.scheduleRows.forEach((row) => {
+  state.scheduleRows.forEach((row, index) => {
     if (row.type !== "event") {
       return;
     }
@@ -861,14 +949,36 @@ function getOutOfOrderScheduleRowIds() {
     if (!data || data.roundIndex === undefined || data.roundIndex === null) {
       return;
     }
-    const records = perEvent.get(data.eventId) || [];
-    const conflicts = records.filter((entry) => entry.roundIndex > data.roundIndex);
-    if (conflicts.length) {
-      conflicts.forEach((entry) => invalid.add(entry.rowId));
-      invalid.add(row.id);
-    }
-    records.push({ rowId: row.id, roundIndex: data.roundIndex });
-    perEvent.set(data.eventId, records);
+    const entries = perEvent.get(data.eventId) || [];
+    entries.push({
+      rowId: row.id,
+      roundIndex: data.roundIndex,
+      day: clampDay(row.day),
+      startMinutes: Number.isFinite(row.startMinutes) ? row.startMinutes : 0,
+      order: index,
+    });
+    perEvent.set(data.eventId, entries);
+  });
+
+  perEvent.forEach((records) => {
+    records.sort((a, b) => {
+      if (a.day !== b.day) {
+        return a.day - b.day;
+      }
+      if (a.startMinutes !== b.startMinutes) {
+        return a.startMinutes - b.startMinutes;
+      }
+      return a.order - b.order;
+    });
+    const seen = [];
+    records.forEach((entry) => {
+      const conflicts = seen.filter((record) => record.roundIndex > entry.roundIndex);
+      if (conflicts.length) {
+        conflicts.forEach((record) => invalid.add(record.rowId));
+        invalid.add(entry.rowId);
+      }
+      seen.push(entry);
+    });
   });
 
   return invalid;
@@ -1178,7 +1288,11 @@ function getRoundLabel(totalRounds, index) {
 function getDayStartLabel(day) {
   const startTimes = state.competitionInfo.dayStartTimes;
   const value = startTimes[day - 1] || startTimes[0] || "09:00";
-  return value;
+  const minutes = minutesFromTime(value);
+  if (minutes === null) {
+    return value;
+  }
+  return timeFromMinutes(minutes);
 }
 
 function formatNumber(value, fractionDigits = 0) {
@@ -1220,6 +1334,13 @@ function buildScheduleCsv() {
     "Ratio",
     "C/G",
     "Stations",
+    "RowType",
+    "EventId",
+    "RoundIndex",
+    "GroupIndex",
+    "SpecialKey",
+    "DurationMinutes",
+    "Metadata",
   ];
   const rows = state.scheduleRows.map((row) => {
     const start =
@@ -1242,6 +1363,13 @@ function buildScheduleCsv() {
         "",
         "",
         "",
+        "special",
+        "",
+        "",
+        "",
+        row.specialKey || "",
+        row.durationMinutes || "",
+        "",
       ];
     }
     const data = getScheduleRowData(row);
@@ -1258,8 +1386,45 @@ function buildScheduleCsv() {
       data ? data.ratio?.toFixed(2) : "",
       data ? data.competitorsPerGroup?.toFixed(1) : "",
       data?.stations ?? "",
+      "event",
+      data?.eventId || "",
+      data?.roundIndex ?? "",
+      row.groupIndex ?? "",
+      "",
+      data?.timeTotal ?? "",
+      "",
     ];
   });
+  const metadata = {
+    version: SCHEDULE_CSV_VERSION,
+    eventRounds: state.eventRounds,
+    competitionInfo: state.competitionInfo,
+    eventSettings: state.eventSettings,
+    globalSettings: state.globalSettings,
+    generatedGroups: state.generatedGroups,
+    scheduleRows: state.scheduleRows,
+  };
+  rows.push([
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "meta",
+    "",
+    "",
+    "",
+    "",
+    "",
+    JSON.stringify(metadata),
+  ]);
   return [header, ...rows]
     .map((cols) => cols.map((value) => escapeCsvValue(String(value ?? ""))).join(","))
     .join("\n");
@@ -1284,6 +1449,171 @@ function downloadCsv(content, filename) {
   URL.revokeObjectURL(url);
 }
 
+function importScheduleFromCsv(content) {
+  if (!content) {
+    throw new Error("The uploaded CSV is empty.");
+  }
+  const rows = parseCsv(content);
+  if (!rows.length) {
+    throw new Error("The uploaded CSV did not contain any rows.");
+  }
+  const header = rows[0];
+  const rowTypeIndex = header.indexOf("RowType");
+  const metadataIndex = header.indexOf("Metadata");
+  if (rowTypeIndex === -1 || metadataIndex === -1) {
+    throw new Error("This CSV was generated by an older version and cannot be imported.");
+  }
+  let metadata = null;
+  for (let i = 1; i < rows.length; i += 1) {
+    const row = rows[i];
+    const rowType = (row[rowTypeIndex] || "").trim().toLowerCase();
+    if (rowType !== "meta") {
+      continue;
+    }
+    const payload = row[metadataIndex] || "";
+    if (!payload.trim()) {
+      continue;
+    }
+    try {
+      metadata = JSON.parse(payload);
+    } catch (error) {
+      console.warn("Failed to parse CSV metadata.", error);
+      throw new Error("Unable to read schedule data from this CSV.");
+    }
+    break;
+  }
+  if (!metadata) {
+    throw new Error("This CSV did not include embedded schedule data.");
+  }
+  if (metadata.version && metadata.version > SCHEDULE_CSV_VERSION) {
+    console.warn("CSV version is newer than supported.", metadata.version);
+  }
+  applyImportedScheduleMetadata(metadata);
+}
+
+function applyImportedScheduleMetadata(metadata) {
+  if (!Array.isArray(metadata.generatedGroups)) {
+    throw new Error("The CSV is missing generated group data.");
+  }
+  if (!Array.isArray(metadata.scheduleRows)) {
+    throw new Error("The CSV is missing schedule rows.");
+  }
+  state.eventRounds = normalizeEventRounds(metadata.eventRounds);
+  state.competitionInfo = normalizeCompetitionInfo(metadata.competitionInfo);
+  state.eventSettings = mergeEventSettingsFromMetadata(metadata.eventSettings);
+  state.globalSettings = {
+    ...GLOBAL_SETTING_DEFAULTS,
+    ...(metadata.globalSettings || {}),
+  };
+  state.generatedGroups = Array.isArray(metadata.generatedGroups)
+    ? metadata.generatedGroups.map((group) => ({ ...group }))
+    : [];
+  state.scheduleRows = Array.isArray(metadata.scheduleRows)
+    ? metadata.scheduleRows.map((row) => ({
+        ...row,
+        id:
+          row.id ||
+          generateId(row.type === "special" ? "special-slot" : "event-slot"),
+      }))
+    : [];
+  clampScheduleRowDays();
+  resetEventSelectors();
+  hydrateCompetitionForm();
+  hydrateEventSettingsTable();
+  hydrateGlobalSettingsControls();
+  renderGroupsTable();
+  saveEventSettings();
+  saveGlobalSettings();
+  persistAppState();
+  setActiveTab("groups");
+}
+
+function normalizeEventRounds(values) {
+  const defaults = createDefaultEventRounds();
+  if (!values || typeof values !== "object") {
+    return defaults;
+  }
+  Object.entries(values).forEach(([eventId, count]) => {
+    defaults[eventId] = Math.max(0, Number(count) || 0);
+  });
+  return defaults;
+}
+
+function mergeEventSettingsFromMetadata(values) {
+  const defaults = cloneEventSettingDefaults();
+  if (!values || typeof values !== "object") {
+    return defaults;
+  }
+  Object.entries(values).forEach(([eventId, config]) => {
+    if (!defaults[eventId]) {
+      defaults[eventId] = { ...config };
+    } else {
+      defaults[eventId] = { ...defaults[eventId], ...config };
+    }
+  });
+  return defaults;
+}
+
+function normalizeCompetitionInfo(info) {
+  const defaults = createDefaultCompetitionInfo();
+  const merged = {
+    ...defaults,
+    ...(info || {}),
+  };
+  if (!Array.isArray(merged.dayStartTimes)) {
+    merged.dayStartTimes = [...defaults.dayStartTimes];
+  } else {
+    merged.dayStartTimes = [...merged.dayStartTimes];
+  }
+  const days = Math.min(4, Math.max(1, Number(merged.eventDays) || 1));
+  merged.eventDays = days;
+  while (merged.dayStartTimes.length < days) {
+    merged.dayStartTimes.push(merged.dayStartTimes[merged.dayStartTimes.length - 1] || "09:00");
+  }
+  if (merged.dayStartTimes.length > days) {
+    merged.dayStartTimes.length = days;
+  }
+  return merged;
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let current = "";
+  let row = [];
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === "," && !inQuotes) {
+      row.push(current);
+      current = "";
+      continue;
+    }
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && text[i + 1] === "\n") {
+        i += 1;
+      }
+      row.push(current);
+      rows.push(row);
+      row = [];
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  row.push(current);
+  rows.push(row);
+  return rows.filter((entry) => entry.some((cell) => cell !== ""));
+}
+
 function hydrateAppState() {
   const saved = loadAppState();
   if (!saved) {
@@ -1293,20 +1623,7 @@ function hydrateAppState() {
     Object.assign(state.eventRounds, saved.eventRounds);
   }
   if (saved.competitionInfo) {
-    Object.assign(state.competitionInfo, saved.competitionInfo);
-    if (!Array.isArray(state.competitionInfo.dayStartTimes)) {
-      state.competitionInfo.dayStartTimes = ["09:00"];
-    }
-    const days = Math.min(4, Math.max(1, Number(state.competitionInfo.eventDays) || 1));
-    state.competitionInfo.eventDays = days;
-    const startTimes = [...state.competitionInfo.dayStartTimes];
-    while (startTimes.length < days) {
-      startTimes.push(startTimes[startTimes.length - 1] || "09:00");
-    }
-    if (startTimes.length > days) {
-      startTimes.length = days;
-    }
-    state.competitionInfo.dayStartTimes = startTimes;
+    state.competitionInfo = normalizeCompetitionInfo(saved.competitionInfo);
   }
   if (Array.isArray(saved.generatedGroups)) {
     state.generatedGroups = saved.generatedGroups;
@@ -1429,6 +1746,12 @@ function timeFromMinutes(totalMinutes) {
   const safeMinutes = Math.max(0, totalMinutes);
   const hours = Math.floor(safeMinutes / 60) % 24;
   const minutes = safeMinutes % 60;
+  const format = state.globalSettings?.timeFormat || GLOBAL_SETTING_DEFAULTS.timeFormat;
+  if (format === "ampm") {
+    const isPm = hours >= 12;
+    const twelveHour = hours % 12 || 12;
+    return `${twelveHour}:${String(minutes).padStart(2, "0")} ${isPm ? "PM" : "AM"}`;
+  }
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
