@@ -21,13 +21,13 @@ const EVENT_SETTING_DEFAULTS = {
   skewb: { timePerGroup: 17, localPercent: 58, regionalPercent: 70 },
   "4x4": { timePerGroup: 25, localPercent: 60, regionalPercent: 70 },
   "5x5": { timePerGroup: 25, localPercent: 48, regionalPercent: 53 },
-  "6x6": { timePerGroup: 25, localPercent: 32, regionalPercent: 36 },
-  "7x7": { timePerGroup: 25, localPercent: 33, regionalPercent: 32 },
+  "6x6": { timePerGroup: 30, localPercent: 32, regionalPercent: 36 },
+  "7x7": { timePerGroup: 35, localPercent: 33, regionalPercent: 32 },
   oh: { timePerGroup: 20, localPercent: 60, regionalPercent: 64 },
   mega: { timePerGroup: 25, localPercent: 49, regionalPercent: 50 },
   sq1: { timePerGroup: 21, localPercent: 39, regionalPercent: 45 },
   clock: { timePerGroup: 21, localPercent: 56, regionalPercent: 53 },
-  "3bld": { timePerGroup: 20, localPercent: 31, regionalPercent: 21 },
+  "3bld": { timePerGroup: 23, localPercent: 31, regionalPercent: 21 },
 };
 
 const INTERNAL_TIMING = {
