@@ -254,6 +254,9 @@
           <p>Click "Generate Groups" to build a schedule preview.</p>
         </div>
         <div class="actions-row">
+          <button id="generate-empty-schedule-from-groups" type="button" class="secondary">
+            Generate Empty Schedule
+          </button>
           <button id="generate-schedule-from-groups" type="button">
             Generate Schedule
           </button>
@@ -278,6 +281,10 @@
                 Clear Schedule
               </button>
             </div>
+          </div>
+          <div id="schedule-view-tabs" class="schedule-view-tabs" role="tablist" aria-label="Schedule builder view">
+            <button type="button" class="schedule-view-tab active" role="tab" aria-selected="true" data-schedule-view="table">Table View</button>
+            <button type="button" class="schedule-view-tab" role="tab" aria-selected="false" data-schedule-view="schedule">Schedule View</button>
           </div>
           <div id="schedule-table-wrapper" class="collection-placeholder">
             <p>Add events to begin composing the schedule.</p>

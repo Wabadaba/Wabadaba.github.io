@@ -243,8 +243,15 @@ button:hover {
   margin-top: 0.5rem;
 }
 
-.day-times label {
-  min-width: 180px;
+.day-time-pair {
+  display: flex;
+  flex: 1 1 360px;
+  gap: 0.75rem;
+}
+
+.day-time-pair label {
+  flex: 1;
+  min-width: 140px;
 }
 
 .actions-row {
@@ -338,6 +345,27 @@ select {
   margin-bottom: 1rem;
 }
 
+.schedule-view-tabs {
+  display: flex;
+  gap: 0.35rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
+.schedule-view-tab {
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.55rem 0.8rem;
+}
+
+.schedule-view-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 .groups-table {
   width: 100%;
   border-collapse: collapse;
@@ -408,6 +436,215 @@ select {
 
 .schedule-row.dragging {
   opacity: 0.5;
+}
+
+.schedule-timeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1rem;
+}
+
+.schedule-day-lane {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface-alt);
+  overflow: hidden;
+}
+
+.schedule-day-lane h4 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.calendar-day-start-input,
+.calendar-day-end-input,
+.schedule-day-start-input,
+.schedule-day-end-input {
+  width: 7.5rem;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.8rem;
+}
+
+.day-start-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.schedule-day-lane h4 span {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.calendar-add-slot-btn {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 0.3rem;
+  line-height: 1;
+}
+
+.calendar-scroll {
+  max-height: 72vh;
+  min-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.calendar-day-grid {
+  position: relative;
+  min-width: 280px;
+}
+
+.calendar-time-axis {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 54px;
+  border-right: 1px solid var(--border);
+}
+
+.calendar-time-axis span {
+  position: absolute;
+  right: 0.35rem;
+  transform: translateY(-0.55em);
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-event-layer {
+  position: absolute;
+  inset: 0 0 0 54px;
+  border-left: 1px solid var(--border);
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 178px,
+    var(--border) 179px,
+    transparent 180px
+  );
+}
+
+.calendar-event {
+  position: absolute;
+  z-index: 1;
+  top: var(--event-top);
+  left: calc(var(--event-left) + 4px);
+  right: calc(var(--event-right) + 4px);
+  height: var(--event-height);
+  min-height: 24px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 0.3rem;
+  background: linear-gradient(
+      rgba(239, 68, 68, var(--timing-red-alpha, 0)),
+      rgba(239, 68, 68, var(--timing-red-alpha, 0))
+    ),
+    var(--surface-alt);
+  overflow: hidden;
+}
+
+.calendar-event.special-card {
+  border-left-color: #e3a008;
+}
+
+.calendar-event-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.7rem 1.8rem 0.7rem 0.35rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.calendar-event-content strong {
+  overflow-wrap: anywhere;
+}
+
+.calendar-event-select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.75rem;
+  pointer-events: auto;
+}
+
+.calendar-event-time,
+.calendar-event-duration {
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-resize-handle {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  width: 100%;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: ns-resize;
+}
+
+.calendar-resize-handle.top {
+  top: 0;
+}
+
+.calendar-resize-handle.bottom {
+  bottom: 0;
+}
+
+.calendar-delete-btn {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 2px;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 0.2rem;
+  background: transparent;
+  color: #ef4444;
+  line-height: 1;
+}
+
+.calendar-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.calendar-resize-handle::after {
+  display: block;
+  width: 26px;
+  height: 3px;
+  margin: 0 auto;
+  border-radius: 2px;
+  background: currentColor;
+  content: "";
+}
+
+.calendar-resize-handle:hover {
+  background: rgba(88, 166, 255, 0.2);
 }
 
 .schedule-table .delete-cell {
@@ -576,6 +813,10 @@ select {
 
 .schedule-table .schedule-row.out-of-order-row td {
   background: rgba(255, 77, 79, 0.2) !important;
+}
+
+.schedule-table .schedule-row.after-day-end-row td {
+  background: rgba(239, 68, 68, 0.32) !important;
 }
 
 .schedule-table .schedule-row.out-of-order-row select,

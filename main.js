@@ -37,7 +37,7 @@ const INTERNAL_TIMING = {
 
 const GLOBAL_SETTING_DEFAULTS = {
   maxRatio: 2.1,
-  timeFormat: "24h",
+  timeFormat: "ampm",
 };
 
 const SPECIAL_BLOCKS = {
@@ -52,6 +52,8 @@ const EVENT_SETTINGS_STORAGE_KEY = "schedule-event-settings";
 const GLOBAL_SETTINGS_STORAGE_KEY = "schedule-global-settings";
 const APP_STATE_STORAGE_KEY = "schedule-app-state-v1";
 const SCHEDULE_CSV_VERSION = 1;
+const SCHEDULE_MINUTES_PER_PIXEL = 3;
+const MIN_SCHEDULE_ROW_DURATION = 5;
 
 const DEFAULT_COMPETITION_INFO = {
   competitorCount: "",
@@ -60,7 +62,8 @@ const DEFAULT_COMPETITION_INFO = {
   competitionType: "Local",
   stations: "",
   eventDays: 1,
-  dayStartTimes: ["09:00"],
+  dayStartTimes: ["08:00"],
+  dayEndTimes: ["19:00"],
 };
 
 const state = {
@@ -82,8 +85,10 @@ const groupsTable = document.getElementById("groups-table");
 const dayStartTimesContainer = document.getElementById("day-start-times");
 const settingsForm = document.getElementById("settings-form");
 const scheduleBuilderWrapper = document.getElementById("schedule-table-wrapper");
+const scheduleViewTabs = document.getElementById("schedule-view-tabs");
 const generateGroupsBtn = document.getElementById("generate-groups");
 const generateScheduleBtn = document.getElementById("generate-schedule-from-groups");
+const generateEmptyScheduleBtn = document.getElementById("generate-empty-schedule-from-groups");
 const clearScheduleBtn = document.getElementById("clear-schedule");
 const specialBlockSelect = document.getElementById("special-block-select");
 const addSpecialBlockBtn = document.getElementById("add-special-block");
@@ -97,6 +102,8 @@ const uploadScheduleInput = document.getElementById("upload-schedule-input");
 
 let draggedScheduleRowId = null;
 let pendingGroupFocus = null;
+let scheduleView = "table";
+let activeScheduleInteraction = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
@@ -113,24 +120,44 @@ document.addEventListener("DOMContentLoaded", () => {
 
 dayStartTimesContainer?.addEventListener("input", (event) => {
   const input = event.target.closest("[data-day-start]");
-  if (!input) {
+  if (input) {
+    updateDayStartTime(Number(input.dataset.dayStart), input.value);
     return;
   }
-  const dayIndex = Number(input.dataset.dayStart);
-  if (Number.isNaN(dayIndex)) {
-    return;
-  }
-  const value = input.value || "09:00";
-  state.competitionInfo.dayStartTimes[dayIndex] = value;
+  const endInput = event.target.closest("[data-day-end]");
+  if (endInput) updateDayEndTime(Number(endInput.dataset.dayEnd), endInput.value);
+});
+
+function updateDayStartTime(dayIndex, value) {
+  if (!Number.isInteger(dayIndex) || dayIndex < 0) return;
+  const previousValue = getDayStartInputValue(dayIndex + 1);
+  const nextValue = value || "08:00";
+  const previousMinutes = minutesFromTime(previousValue) ?? 0;
+  const nextMinutes = minutesFromTime(nextValue) ?? previousMinutes;
+  const minuteDelta = nextMinutes - previousMinutes;
+  state.scheduleRows.forEach((row) => {
+    if (clampDay(row.day) === dayIndex + 1 && Number.isFinite(row.startOverrideMinutes)) {
+      row.startOverrideMinutes += minuteDelta;
+    }
+  });
+  state.competitionInfo.dayStartTimes[dayIndex] = nextValue;
   recalculateScheduleTimes();
   renderScheduleBuilder();
   persistAppState();
-});
+}
+
+function updateDayEndTime(dayIndex, value) {
+  if (!Number.isInteger(dayIndex) || dayIndex < 0) return;
+  state.competitionInfo.dayEndTimes[dayIndex] = value || "19:00";
+  renderScheduleBuilder();
+  persistAppState();
+}
 
 function createDefaultCompetitionInfo() {
   return {
     ...DEFAULT_COMPETITION_INFO,
     dayStartTimes: [...DEFAULT_COMPETITION_INFO.dayStartTimes],
+    dayEndTimes: [...DEFAULT_COMPETITION_INFO.dayEndTimes],
   };
 }
 
@@ -214,12 +241,11 @@ function initCompetitionForm() {
 function hydrateCompetitionForm() {
   const elements = competitionForm.elements;
   Object.entries(state.competitionInfo).forEach(([name, value]) => {
-    if (name === "dayStartTimes") {
+    if (name === "dayStartTimes" || name === "dayEndTimes") {
       return;
     }
     const control = elements.namedItem(name);
     if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) {
-      if (value === "") return;
       control.value = String(value);
     }
   });
@@ -244,13 +270,21 @@ function handleCompetitionInput(event) {
     const days = Math.min(4, Math.max(1, Number(value) || 1));
     state.competitionInfo.eventDays = days;
     const startTimes = [...state.competitionInfo.dayStartTimes];
+    const endTimes = [...state.competitionInfo.dayEndTimes];
     while (startTimes.length < days) {
-      startTimes.push(startTimes[startTimes.length - 1] || "09:00");
+      startTimes.push(startTimes[startTimes.length - 1] || "08:00");
+    }
+    while (endTimes.length < days) {
+      endTimes.push(endTimes[endTimes.length - 1] || "19:00");
     }
     if (startTimes.length > days) {
       startTimes.length = days;
     }
+    if (endTimes.length > days) {
+      endTimes.length = days;
+    }
     state.competitionInfo.dayStartTimes = startTimes;
+    state.competitionInfo.dayEndTimes = endTimes;
     renderDayStartTimeInputs();
     clampScheduleRowDays();
     recalculateScheduleTimes();
@@ -268,18 +302,21 @@ function renderDayStartTimeInputs() {
   if (!dayStartTimesContainer) return;
   const dayCount = state.competitionInfo.eventDays || 1;
   const startTimes = state.competitionInfo.dayStartTimes;
+  const endTimes = state.competitionInfo.dayEndTimes;
   const inputs = Array.from({ length: dayCount }, (_, index) => {
-    const value = startTimes[index] || startTimes[0] || "09:00";
+    const value = startTimes[index] || startTimes[0] || "08:00";
+    const endValue = endTimes[index] || endTimes[endTimes.length - 1] || "19:00";
     return `
-      <label>
-        Day ${index + 1} Start Time
-        <input
-          type="time"
-          value="${value}"
-          data-day-start="${index}"
-          required
-        />
-      </label>
+      <div class="day-time-pair">
+        <label>
+          Day ${index + 1} Start Time
+          <input type="time" value="${value}" data-day-start="${index}" required />
+        </label>
+        <label>
+          Day ${index + 1} End Time
+          <input type="time" value="${endValue}" data-day-end="${index}" required />
+        </label>
+      </div>
     `;
   }).join("");
   dayStartTimesContainer.innerHTML = inputs;
@@ -301,6 +338,7 @@ function initEventSettingsControls() {
       }
       state.eventSettings[eventId][field] = Math.max(0, Math.min(upperBound, rawNumber));
       saveEventSettings();
+      renderScheduleBuilder();
     });
   });
 
@@ -662,7 +700,26 @@ function recalculateGroupRow(row) {
 }
 
 function initScheduleBuilderControls() {
-  generateScheduleBtn?.addEventListener("click", () => {
+  scheduleBuilderWrapper?.addEventListener("pointerdown", handleScheduleInteractionStart);
+  document.addEventListener("pointermove", handleScheduleInteractionMove);
+  document.addEventListener("pointerup", handleScheduleInteractionEnd);
+  document.addEventListener("pointercancel", handleScheduleInteractionEnd);
+
+  scheduleViewTabs?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-schedule-view]");
+    if (!button) {
+      return;
+    }
+    scheduleView = button.dataset.scheduleView;
+    scheduleViewTabs.querySelectorAll("[data-schedule-view]").forEach((tab) => {
+      const isActive = tab === button;
+      tab.classList.toggle("active", isActive);
+      tab.setAttribute("aria-selected", String(isActive));
+    });
+    renderScheduleBuilder();
+  });
+
+  generateEmptyScheduleBtn?.addEventListener("click", () => {
     if (!state.generatedGroups.length) {
       alert("Generate groups first.");
       return;
@@ -684,6 +741,8 @@ function initScheduleBuilderControls() {
     recalculateScheduleTimes();
     renderScheduleBuilder();
   });
+
+  generateScheduleBtn?.addEventListener("click", generateSuggestedSchedule);
 
   clearScheduleBtn?.addEventListener("click", () => {
     state.scheduleRows = [];
@@ -731,6 +790,16 @@ function initScheduleBuilderControls() {
   });
 
   scheduleBuilderWrapper?.addEventListener("change", (event) => {
+    const dayStartInput = event.target.closest("[data-schedule-day-start]");
+    if (dayStartInput) {
+      updateDayStartTime(Number(dayStartInput.dataset.scheduleDayStart), dayStartInput.value);
+      return;
+    }
+    const dayEndInput = event.target.closest("[data-schedule-day-end]");
+    if (dayEndInput) {
+      updateDayEndTime(Number(dayEndInput.dataset.scheduleDayEnd), dayEndInput.value);
+      return;
+    }
     const select = event.target.closest("[data-schedule-select]");
     if (select) {
       handleScheduleSelectChange(select);
@@ -769,6 +838,289 @@ function initScheduleBuilderControls() {
     const csv = buildScheduleCsv();
     downloadCsv(csv, "schedule.csv");
   });
+}
+
+function generateSuggestedSchedule() {
+  if (!state.generatedGroups.length) {
+    alert("Generate groups first.");
+    return;
+  }
+
+  const groupedEvents = new Map();
+  state.generatedGroups.forEach((group, groupIndex) => {
+    const entries = groupedEvents.get(group.eventId) || [];
+    entries.push({ group, groupIndex });
+    groupedEvents.set(group.eventId, entries);
+  });
+  const eventOrder = Array.from(groupedEvents.keys());
+  const threeByThreeRounds = groupedEvents.get("3x3") || [];
+  const threeByThreeFirst = threeByThreeRounds.find(
+    ({ group }) => group.roundIndex === 0 && (group.roundLabel !== "Final" || threeByThreeRounds.length === 1)
+  );
+  if (!threeByThreeFirst) {
+    alert("The suggested schedule needs at least one 3x3 round.");
+    return;
+  }
+
+  const preferredEventIds = ["2x2", "pyra", "4x4"];
+  const firstRoundByEvent = new Map();
+  groupedEvents.forEach((entries, eventId) => {
+    const firstRound = entries.find(
+      ({ group }) => group.roundIndex === 0 && (group.roundLabel !== "Final" || entries.length === 1)
+    );
+    if (firstRound) firstRoundByEvent.set(eventId, firstRound);
+  });
+
+  const preferredFirstId = preferredEventIds.find(
+    (eventId) => firstRoundByEvent.has(eventId) && eventId !== "3x3"
+  );
+  const firstRoundOrder = [
+    threeByThreeFirst,
+    ...(preferredFirstId ? [firstRoundByEvent.get(preferredFirstId)] : []),
+    ...eventOrder
+      .filter((eventId) => eventId !== "3x3" && eventId !== preferredFirstId)
+      .map((eventId) => firstRoundByEvent.get(eventId))
+      .filter(Boolean),
+  ];
+  const lunchBoundary = chooseSuggestedLunchBoundary(firstRoundOrder, preferredEventIds);
+  const firstRoundsBeforeLunch = firstRoundOrder.slice(0, lunchBoundary.count);
+  let firstRoundsAfterLunch = firstRoundOrder.slice(lunchBoundary.count);
+  const preferredAfterLunch = preferredEventIds.find((eventId) =>
+    firstRoundsAfterLunch.some(({ group }) => group.eventId === eventId)
+  );
+  if (preferredAfterLunch) {
+    const preferredIndex = firstRoundsAfterLunch.findIndex(
+      ({ group }) => group.eventId === preferredAfterLunch
+    );
+    firstRoundsAfterLunch = [
+      firstRoundsAfterLunch[preferredIndex],
+      ...firstRoundsAfterLunch.filter((_, index) => index !== preferredIndex),
+    ];
+  }
+
+  const scheduledFirstRounds = [...firstRoundsBeforeLunch, ...firstRoundsAfterLunch];
+  const scheduledEventOrder = scheduledFirstRounds.map(({ group }) => group.eventId);
+  const scheduleRows = [
+    createSpecialScheduleRow("setup", { duration: 45 }),
+    createSpecialScheduleRow("tutorial", { duration: 25, label: "New Competitor Tutorial" }),
+    ...firstRoundsBeforeLunch.map(({ groupIndex }) => createSuggestedEventRow(groupIndex)),
+  ];
+  const lunchRow = createSpecialScheduleRow("lunch", { duration: 60 });
+  lunchRow.targetDay = 1;
+  if (Number.isFinite(lunchBoundary.startOverrideMinutes)) {
+    lunchRow.startOverrideMinutes = lunchBoundary.startOverrideMinutes;
+  }
+  scheduleRows.push(
+    lunchRow,
+    ...firstRoundsAfterLunch.map(({ groupIndex }) => createSuggestedEventRow(groupIndex))
+  );
+  for (let day = 2; day <= (state.competitionInfo.eventDays || 1); day += 1) {
+    const additionalLunch = createSpecialScheduleRow("lunch", { duration: 60 });
+    additionalLunch.targetDay = day;
+    scheduleRows.push(additionalLunch);
+  }
+
+  const nonFinalRoundIndexes = state.generatedGroups
+    .filter((group) => group.roundLabel !== "Final")
+    .map((group) => group.roundIndex)
+    .filter((roundIndex) => roundIndex > 0);
+  const lastNonFinalRound = Math.max(0, ...nonFinalRoundIndexes);
+  for (let roundIndex = 1; roundIndex <= lastNonFinalRound; roundIndex += 1) {
+    scheduledEventOrder.forEach((eventId) => {
+      const entry = (groupedEvents.get(eventId) || []).find(
+        ({ group }) => group.roundIndex === roundIndex && group.roundLabel !== "Final"
+      );
+      if (entry) scheduleRows.push(createSuggestedEventRow(entry.groupIndex));
+    });
+  }
+
+  eventOrder
+    .filter((eventId) => eventId !== "3x3")
+    .concat("3x3")
+    .forEach((eventId) => {
+      const entries = groupedEvents.get(eventId) || [];
+      if (entries.length === 1) return;
+      const final = entries.find(
+        ({ group }) => group.roundLabel === "Final"
+      );
+      if (final) scheduleRows.push(createSuggestedEventRow(final.groupIndex));
+    });
+  scheduleRows.push(createSpecialScheduleRow("awards", { duration: 45 }));
+
+  assignSuggestedScheduleDays(scheduleRows);
+  positionAdditionalDayLunches(scheduleRows);
+  state.scheduleRows = scheduleRows;
+  persistAppState();
+  recalculateScheduleTimes();
+  renderScheduleBuilder();
+}
+
+function assignSuggestedScheduleDays(rows) {
+  const dayCount = state.competitionInfo.eventDays || 1;
+  const cursors = {};
+  for (let day = 1; day <= dayCount; day += 1) {
+    cursors[day] = minutesFromTime(getDayStartInputValue(day)) ?? 8 * 60;
+  }
+
+  const awardsRow = rows.find((row) => row.type === "special" && row.specialKey === "awards");
+  let currentDay = 1;
+  rows.filter((row) => row !== awardsRow).forEach((row) => {
+    const staysOnFirstDay = row.specialKey === "setup" || row.specialKey === "tutorial";
+    const targetDay = Number.isInteger(row.targetDay) ? row.targetDay : null;
+    const pinnedToDay = staysOnFirstDay || targetDay !== null;
+    let day = staysOnFirstDay ? 1 : targetDay ?? currentDay;
+    let cursor = cursors[day] ?? cursors[1];
+    let start = Number.isFinite(row.startOverrideMinutes)
+      ? Math.max(cursor, row.startOverrideMinutes)
+      : cursor;
+    const duration = getScheduleRowDuration(row);
+
+    while (!pinnedToDay && day < dayCount && start + duration > getDayEndMinutes(day)) {
+      day += 1;
+      cursor = cursors[day] ?? (minutesFromTime(getDayStartInputValue(day)) ?? 8 * 60);
+      start = Number.isFinite(row.startOverrideMinutes)
+        ? Math.max(cursor, row.startOverrideMinutes)
+        : cursor;
+    }
+
+    row.day = day;
+    if (Number.isFinite(row.startOverrideMinutes)) {
+      row.startOverrideMinutes = start;
+    }
+    delete row.targetDay;
+    cursors[day] = start + duration;
+    if (!staysOnFirstDay) currentDay = Math.max(currentDay, day);
+  });
+
+  if (awardsRow) {
+    awardsRow.day = dayCount;
+    const cursor = cursors[dayCount] ?? (minutesFromTime(getDayStartInputValue(dayCount)) ?? 8 * 60);
+    awardsRow.startOverrideMinutes = cursor;
+  }
+}
+
+function positionAdditionalDayLunches(rows) {
+  const dayCount = state.competitionInfo.eventDays || 1;
+  for (let day = 2; day <= dayCount; day += 1) {
+    const lunch = rows.find(
+      (row) => row.type === "special" && row.specialKey === "lunch" && row.day === day
+    );
+    if (!lunch) continue;
+
+    const dayEvents = rows.filter((row) => row.type === "event" && row.day === day);
+    const placement = chooseDailyLunchPlacement(day, dayEvents);
+    rows.splice(rows.indexOf(lunch), 1);
+    const nextEvent = dayEvents[placement.count];
+    let insertIndex;
+    if (nextEvent) {
+      insertIndex = rows.indexOf(nextEvent);
+    } else if (dayEvents.length) {
+      insertIndex = rows.indexOf(dayEvents[dayEvents.length - 1]) + 1;
+    } else {
+      const awardsIndex = rows.findIndex(
+        (row) => row.type === "special" && row.specialKey === "awards"
+      );
+      insertIndex = awardsIndex === -1 ? rows.length : awardsIndex;
+    }
+    lunch.startOverrideMinutes = placement.startMinutes;
+    rows.splice(insertIndex, 0, lunch);
+  }
+
+  const awardsRow = rows.find((row) => row.type === "special" && row.specialKey === "awards");
+  if (awardsRow) delete awardsRow.startOverrideMinutes;
+}
+
+function chooseDailyLunchPlacement(day, dayEvents) {
+  const dayStart = minutesFromTime(getDayStartInputValue(day)) ?? 8 * 60;
+  const boundaries = [{ count: 0, time: dayStart }];
+  let time = dayStart;
+  dayEvents.forEach((row, index) => {
+    time += getScheduleRowDuration(row);
+    boundaries.push({ count: index + 1, time });
+  });
+
+  const chooseClosestToMidpoint = (candidates) =>
+    [...candidates].sort(
+      (a, b) => Math.abs(a.time - 12.5 * 60) - Math.abs(b.time - 12.5 * 60)
+    )[0];
+  const midday = boundaries.filter((boundary) => boundary.time >= 12 * 60 && boundary.time <= 13 * 60);
+  let boundary;
+  if (midday.length) {
+    boundary = chooseClosestToMidpoint(midday);
+  } else if (dayStart < 9 * 60) {
+    const beforeNoon = boundaries.filter((entry) => entry.time < 12 * 60);
+    boundary = beforeNoon.sort((a, b) => b.time - a.time)[0];
+  } else {
+    const afterOne = boundaries.filter((entry) => entry.time > 13 * 60);
+    boundary = afterOne.sort((a, b) => a.time - b.time)[0];
+  }
+
+  boundary ||= chooseClosestToMidpoint(boundaries);
+  let startMinutes = boundary.time;
+  if (!dayEvents.length) {
+    startMinutes = Math.max(startMinutes, 12 * 60);
+  } else if (!midday.length && dayStart < 9 * 60 && startMinutes < 12 * 60) {
+    startMinutes = Math.max(startMinutes, 11 * 60 + 30);
+  } else if (!midday.length && dayStart >= 9 * 60 && startMinutes < 13 * 60) {
+    startMinutes = 13 * 60;
+  }
+  return { count: boundary.count, startMinutes };
+}
+
+function chooseSuggestedLunchBoundary(firstRounds, preferredEventIds) {
+  const startTime = minutesFromTime(getDayStartInputValue(1)) ?? 8 * 60;
+  const boundaries = [];
+  let time = startTime + 45 + 25;
+  firstRounds.forEach((entry, index) => {
+    time += Math.max(0, Number(entry.group.timeTotal) || 0);
+    boundaries.push({ count: index + 1, time });
+  });
+
+  const hasPreferredAfter = (boundary) =>
+    firstRounds.slice(boundary.count).some(({ group }) =>
+      preferredEventIds.includes(group.eventId)
+    );
+  const chooseClosestToLunchMidpoint = (candidates) =>
+    [...candidates].sort(
+      (a, b) =>
+        Math.abs(a.time - 12.5 * 60) - Math.abs(b.time - 12.5 * 60) ||
+        a.count - b.count
+    )[0];
+
+  const midday = boundaries.filter((boundary) => boundary.time >= 12 * 60 && boundary.time <= 13 * 60);
+  if (midday.length) {
+    const withPreferredAfter = midday.filter(hasPreferredAfter);
+    return chooseClosestToLunchMidpoint(withPreferredAfter.length ? withPreferredAfter : midday);
+  }
+
+  const preferredBoundaries = boundaries.filter(hasPreferredAfter);
+  if (startTime < 9 * 60) {
+    const beforeNoon = boundaries.filter((boundary) => boundary.time < 12 * 60);
+    const preferredBeforeNoon = beforeNoon.filter(hasPreferredAfter);
+    const candidates = preferredBeforeNoon.length ? preferredBeforeNoon : beforeNoon;
+    if (candidates.length) {
+      return candidates.sort((a, b) => b.time - a.time)[0];
+    }
+  } else {
+    const afterOne = boundaries.filter((boundary) => boundary.time > 13 * 60);
+    const preferredAfterOne = afterOne.filter(hasPreferredAfter);
+    const candidates = preferredAfterOne.length ? preferredAfterOne : afterOne;
+    if (candidates.length) {
+      return candidates.sort((a, b) => a.time - b.time)[0];
+    }
+  }
+
+  const fallback = chooseClosestToLunchMidpoint(preferredBoundaries.length ? preferredBoundaries : boundaries);
+  if (fallback && startTime >= 9 * 60 && fallback.time < 13 * 60) {
+    return { ...fallback, startOverrideMinutes: 13 * 60 };
+  }
+  return fallback || { count: firstRounds.length, time };
+}
+
+function createSuggestedEventRow(groupIndex) {
+  const row = createEventScheduleRow();
+  row.groupIndex = groupIndex;
+  return row;
 }
 
 function initScheduleUploadControls() {
@@ -861,24 +1213,28 @@ function recalculateScheduleTimes() {
   const cursors = {};
   const startTimes = state.competitionInfo.dayStartTimes;
   for (let day = 1; day <= dayCount; day += 1) {
-    const timeValue = startTimes[day - 1] || startTimes[0] || "09:00";
-    cursors[day] = minutesFromTime(timeValue) ?? 9 * 60;
+    const timeValue = startTimes[day - 1] || startTimes[0] || "08:00";
+    cursors[day] = minutesFromTime(timeValue) ?? 8 * 60;
   }
   state.scheduleRows.forEach((row) => {
     row.day = clampDay(row.day);
     const duration = getScheduleRowDuration(row);
-    const start = cursors[row.day] ?? cursors[1];
+    const dayCursor = cursors[row.day] ?? cursors[1];
+    const start = Number.isFinite(row.startOverrideMinutes)
+      ? row.startOverrideMinutes
+      : dayCursor;
     row.startMinutes = start;
     row.endMinutes = start + duration;
-    if (duration > 0) {
-      cursors[row.day] = row.endMinutes;
-    }
+    cursors[row.day] = Math.max(dayCursor, row.endMinutes);
   });
 }
 
 function getScheduleRowDuration(row) {
   if (row.type === "special") {
     return Math.max(0, Number(row.durationMinutes) || 0);
+  }
+  if (Number.isFinite(row.durationOverrideMinutes)) {
+    return Math.max(0, row.durationOverrideMinutes);
   }
   const data = getScheduleRowData(row);
   return data?.timeTotal || 0;
@@ -888,13 +1244,18 @@ function renderScheduleBuilder() {
   if (!scheduleBuilderWrapper) return;
 
   if (!state.scheduleRows.length) {
-    scheduleBuilderWrapper.classList.add("collection-placeholder");
-    scheduleBuilderWrapper.innerHTML = `<p>Add events to begin composing the schedule.</p>`;
+    const hasCalendarLanes = scheduleView === "schedule";
+    scheduleBuilderWrapper.classList.toggle("collection-placeholder", !hasCalendarLanes);
+    scheduleBuilderWrapper.innerHTML = hasCalendarLanes
+      ? renderScheduleTimeline()
+      : `<p>Add events to begin composing the schedule.</p>`;
     return;
   }
 
   scheduleBuilderWrapper.classList.remove("collection-placeholder");
-  scheduleBuilderWrapper.innerHTML = `
+  scheduleBuilderWrapper.innerHTML = scheduleView === "schedule"
+    ? renderScheduleTimeline()
+    : `
     <table class="schedule-table">
       <colgroup>
         <col class="col-start" />
@@ -932,9 +1293,283 @@ function renderScheduleBuilder() {
     </table>
   `;
 
-  const tbody = scheduleBuilderWrapper.querySelector("tbody");
-  attachScheduleRowDragHandlers(tbody);
+  attachScheduleRowDragHandlers(scheduleBuilderWrapper);
   attachDayDropZones();
+}
+
+function renderScheduleTimeline() {
+  const dayCount = state.competitionInfo.eventDays || 1;
+  const rowsByDay = Array.from({ length: dayCount }, () => []);
+  state.scheduleRows.forEach((row) => {
+    rowsByDay[clampDay(row.day) - 1].push(row);
+  });
+
+  return `
+    <div class="schedule-timeline">
+      ${rowsByDay.map((rows, index) => {
+        const day = index + 1;
+        const startTime = minutesFromTime(getDayStartLabel(day)) ?? 8 * 60;
+        const firstEventTime = rows.length
+          ? Math.min(...rows.map((row) => row.startMinutes))
+          : startTime;
+        const timelineStart = Math.min(startTime, firstEventTime);
+        const lastEventTime = rows.length
+          ? Math.max(...rows.map((row) => row.endMinutes))
+          : startTime;
+        const hourCount = Math.max(8, Math.ceil((lastEventTime - timelineStart) / 60));
+        const timelineHeight = hourCount * 60 * SCHEDULE_MINUTES_PER_PIXEL;
+        const calendarRows = arrangeCalendarRows(rows);
+        return `
+          <section class="schedule-day-lane" data-drop-day="${day}" aria-label="Day ${day} schedule">
+            <h4>
+              <span>Day ${day} start</span>
+              <input type="time" class="calendar-day-start-input" data-schedule-day-start="${day - 1}" value="${getDayStartInputValue(day)}" aria-label="Day ${day} start time" />
+              <span>End</span>
+              <input type="time" class="calendar-day-end-input" data-schedule-day-end="${day - 1}" value="${getDayEndInputValue(day)}" aria-label="Day ${day} end time" />
+              <button type="button" class="calendar-add-slot-btn" data-add-slot-day="${day}" aria-label="Add event slot to Day ${day}">+</button>
+            </h4>
+            <div class="calendar-scroll">
+              <div class="calendar-day-grid" data-start-minutes="${timelineStart}" style="height: ${timelineHeight}px">
+                <div class="calendar-time-axis">
+                  ${Array.from({ length: hourCount + 1 }, (_, hour) => `
+                    <span style="top: ${hour * 60 * SCHEDULE_MINUTES_PER_PIXEL}px">${timeFromMinutes(timelineStart + hour * 60)}</span>
+                  `).join("")}
+                </div>
+                <div class="calendar-event-layer">
+                  ${calendarRows.map(({ row, column, columnCount }) => renderScheduleCard(row, timelineStart, column, columnCount)).join("")}
+                </div>
+              </div>
+            </div>
+          </section>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function arrangeCalendarRows(rows) {
+  const sortedRows = [...rows].sort((a, b) => a.startMinutes - b.startMinutes);
+  const layouts = [];
+  let cluster = [];
+  let clusterEnd = -Infinity;
+
+  const addCluster = () => {
+    const columnEnds = [];
+    const placed = cluster.map(({ row, displayEnd }) => {
+      let column = columnEnds.findIndex((end) => end <= row.startMinutes);
+      if (column === -1) column = columnEnds.length;
+      columnEnds[column] = displayEnd;
+      return { row, column };
+    });
+    placed.forEach((entry) => {
+      layouts.push({ ...entry, columnCount: columnEnds.length });
+    });
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+
+  sortedRows.forEach((row) => {
+    const unassignedEvent = row.type === "event" && !getScheduleRowData(row);
+    const displayDuration = unassignedEvent ? 32 : MIN_SCHEDULE_ROW_DURATION;
+    const displayEnd = Math.max(row.endMinutes, row.startMinutes + displayDuration);
+    if (cluster.length && row.startMinutes >= clusterEnd) {
+      addCluster();
+    }
+    cluster.push({ row, displayEnd });
+    clusterEnd = Math.max(clusterEnd, displayEnd);
+  });
+  if (cluster.length) addCluster();
+
+  return layouts;
+}
+
+function renderScheduleCard(row, timelineStart, column, columnCount) {
+  const data = getScheduleRowData(row);
+  const isSpecial = row.type === "special";
+  const startLabel = Number.isFinite(row.startMinutes)
+    ? timeFromMinutes(row.startMinutes)
+    : "—";
+  const endLabel = Number.isFinite(row.endMinutes)
+    ? timeFromMinutes(row.endMinutes)
+    : "—";
+  const title = isSpecial
+    ? row.label || SPECIAL_BLOCKS[row.specialKey]?.label || "Special"
+    : data
+      ? `${data.eventName} ${data.roundLabel}`
+      : "Unassigned event";
+  const detail = isSpecial ? "Special block" : "Event slot";
+  const eventAttribute = data?.eventId ? ` data-event="${data.eventId}"` : "";
+  const duration = getScheduleRowDuration(row);
+  const top = Math.max(0, (row.startMinutes - timelineStart) * SCHEDULE_MINUTES_PER_PIXEL);
+  const isUnassignedEvent = row.type === "event" && !data;
+  const height = Math.max(isUnassignedEvent ? 96 : 24, duration * SCHEDULE_MINUTES_PER_PIXEL);
+  const timingRedAlpha = getScheduleTimingRedAlpha(data, row);
+  const left = (column / columnCount) * 100;
+  const right = ((columnCount - column - 1) / columnCount) * 100;
+  const assignmentControl = isUnassignedEvent
+    ? `
+      <select class="calendar-event-select" data-schedule-select data-row-id="${row.id}" aria-label="Assign event to schedule block">
+        <option value="">Select event</option>
+        ${getGroupOptions(row)
+          .map((option) => `<option value="${option.value}">${option.label}</option>`)
+          .join("")}
+      </select>
+    `
+    : "";
+
+  return `
+    <article class="calendar-event${isSpecial ? " special-card" : ""}" data-row-id="${row.id}" data-day="${row.day}"${eventAttribute} style="--event-top: ${top}px; --event-height: ${height}px; --event-left: ${left}%; --event-right: ${right}%; --timing-red-alpha: ${timingRedAlpha}" aria-label="${title}, ${startLabel} to ${endLabel}">
+      <button type="button" class="calendar-resize-handle top" data-resize-edge="start" aria-label="Adjust ${title} start time"></button>
+      <button type="button" class="calendar-delete-btn" data-delete-row="${row.id}" aria-label="Remove ${title}">×</button>
+      <div class="calendar-event-content">
+        <strong>${title}</strong>
+        ${assignmentControl}
+        <span class="calendar-event-time">${startLabel} - ${endLabel}</span>
+        <span class="calendar-event-duration">${detail} · ${formatNumber(duration, 0)} min</span>
+      </div>
+      <button type="button" class="calendar-resize-handle bottom" data-resize-edge="end" aria-label="Adjust ${title} end time"></button>
+    </article>
+  `;
+}
+
+function getScheduleTimingRedAlpha(group, row) {
+  let alpha = 0;
+  if (group?.eventId && group.roundLabel !== "Final") {
+    const recommended = Number(
+      state.eventSettings[group.eventId]?.timePerGroup ??
+        EVENT_SETTING_DEFAULTS[group.eventId]?.timePerGroup
+    );
+    const current = Number(group.timePerGroup);
+    if (recommended > 0 && current >= 0 && current < recommended) {
+      const shortfallBeyondBuffer = recommended - current - 3;
+      if (shortfallBeyondBuffer > 0) {
+        const maximumShortfall = Math.max(1, recommended - 3);
+        alpha = Math.min(1, shortfallBeyondBuffer / maximumShortfall) * 0.16;
+      }
+    }
+  }
+
+  if (
+    row &&
+    Number.isFinite(row.endMinutes) &&
+    row.endMinutes > getDayEndMinutes(row.day)
+  ) {
+    alpha = Math.max(alpha, 0.58);
+  }
+  return alpha.toFixed(3);
+}
+
+function handleScheduleInteractionStart(event) {
+  const handle = event.target.closest("[data-resize-edge]");
+  const card = event.target.closest(".calendar-event");
+  if (!card || event.target.closest("[data-delete-row], [data-schedule-select]")) return;
+
+  const row = state.scheduleRows.find((entry) => entry.id === card.dataset.rowId);
+  const grid = card.closest(".calendar-day-grid");
+  if (!row || !grid) return;
+
+  event.preventDefault();
+  const duration = Math.max(MIN_SCHEDULE_ROW_DURATION, getScheduleRowDuration(row));
+  activeScheduleInteraction = {
+    pointerId: event.pointerId,
+    rowId: row.id,
+    mode: handle ? "resize" : "move",
+    edge: handle?.dataset.resizeEdge,
+    initialY: event.clientY,
+    initialX: event.clientX,
+    initialStart: row.startMinutes,
+    initialDuration: duration,
+    initialDay: row.day,
+    timelineStart: Number(grid.dataset.startMinutes),
+  };
+  card.setPointerCapture(event.pointerId);
+}
+
+function handleScheduleInteractionMove(event) {
+  if (!activeScheduleInteraction || activeScheduleInteraction.pointerId !== event.pointerId) return;
+
+  const interaction = activeScheduleInteraction;
+  const delta = Math.round(((event.clientY - interaction.initialY) / SCHEDULE_MINUTES_PER_PIXEL) / 5) * 5;
+  const duration = interaction.mode === "resize"
+    ? interaction.edge === "start"
+      ? Math.max(MIN_SCHEDULE_ROW_DURATION, interaction.initialDuration - delta)
+      : Math.max(MIN_SCHEDULE_ROW_DURATION, interaction.initialDuration + delta)
+    : interaction.initialDuration;
+  let start = interaction.initialStart + delta;
+  if (interaction.mode === "resize") {
+    start = interaction.edge === "start"
+      ? interaction.initialStart + interaction.initialDuration - duration
+      : interaction.initialStart;
+  }
+  let day = interaction.previewDay || interaction.initialDay;
+  let timelineStart = interaction.timelineStart;
+
+  if (interaction.mode === "move") {
+    const targetLane = document.elementFromPoint(event.clientX, event.clientY)
+      ?.closest(".schedule-day-lane");
+    if (targetLane) {
+      day = Number(targetLane.dataset.dropDay);
+      const targetGrid = targetLane.querySelector(".calendar-day-grid");
+      timelineStart = Number(targetGrid?.dataset.startMinutes) || timelineStart;
+    }
+    start = Math.max(timelineStart, start);
+  }
+
+  const card = Array.from(scheduleBuilderWrapper.querySelectorAll(".calendar-event"))
+    .find((element) => element.dataset.rowId === interaction.rowId);
+  if (!card) return;
+
+  if (interaction.mode === "move") {
+    const targetLane = document.querySelector(`.schedule-day-lane[data-drop-day="${day}"]`);
+    const targetLayer = targetLane?.querySelector(".calendar-event-layer");
+    if (targetLayer && card.parentElement !== targetLayer) {
+      targetLayer.append(card);
+    }
+    card.style.setProperty("--event-left", "0%");
+    card.style.setProperty("--event-right", "0%");
+  }
+  card.style.setProperty("--event-top", `${Math.max(0, (start - timelineStart) * SCHEDULE_MINUTES_PER_PIXEL)}px`);
+  card.style.setProperty("--event-height", `${Math.max(24, duration * SCHEDULE_MINUTES_PER_PIXEL)}px`);
+  card.querySelector(".calendar-event-time").textContent = `${timeFromMinutes(start)} - ${timeFromMinutes(start + duration)}`;
+  card.querySelector(".calendar-event-duration").textContent = `${duration} min`;
+  interaction.previewStart = start;
+  interaction.previewDuration = duration;
+  interaction.previewDay = day;
+}
+
+function handleScheduleInteractionEnd(event) {
+  if (!activeScheduleInteraction || activeScheduleInteraction.pointerId !== event.pointerId) return;
+
+  const interaction = activeScheduleInteraction;
+  activeScheduleInteraction = null;
+  if (!Number.isFinite(interaction.previewStart)) return;
+
+  const row = state.scheduleRows.find((entry) => entry.id === interaction.rowId);
+  if (!row) return;
+  row.day = clampDay(interaction.previewDay);
+  row.startOverrideMinutes = interaction.previewStart;
+  if (interaction.mode === "resize") {
+    if (row.type === "special") {
+      row.durationMinutes = interaction.previewDuration;
+    } else {
+      const group = getScheduleRowData(row);
+      if (group && Number(group.groups) > 0) {
+        group.timePerGroup = interaction.previewDuration / Number(group.groups);
+        recalculateGroupRow(group);
+        delete row.durationOverrideMinutes;
+      } else {
+        row.durationOverrideMinutes = interaction.previewDuration;
+      }
+    }
+  }
+
+  persistAppState();
+  recalculateScheduleTimes();
+  if (row.type === "event") {
+    renderGroupsTable();
+  } else {
+    renderScheduleBuilder();
+  }
 }
 
 function getOutOfOrderScheduleRowIds() {
@@ -1010,10 +1645,16 @@ function renderScheduleRowsWithHeaders() {
 }
 
 function renderDayHeaderRow(day) {
-  const startLabel = getDayStartLabel(day);
   return `
     <tr class="day-header" data-drop-day="${day}">
-      <td colspan="11">Day ${day} · Start ${startLabel}</td>
+      <td colspan="11">
+        <div class="day-start-cell">
+          <span>Day ${day} start</span>
+          <input type="time" class="schedule-day-start-input" data-schedule-day-start="${day - 1}" value="${getDayStartInputValue(day)}" aria-label="Day ${day} start time" />
+          <span>End</span>
+          <input type="time" class="schedule-day-end-input" data-schedule-day-end="${day - 1}" value="${getDayEndInputValue(day)}" aria-label="Day ${day} end time" />
+        </div>
+      </td>
       <td class="delete-cell">
         <button
           type="button"
@@ -1035,6 +1676,9 @@ function renderScheduleRow(row, invalidRowIds) {
   const classes = ["schedule-row"];
   if (invalidRowIds?.has(row.id)) {
     classes.push("out-of-order-row");
+  }
+  if (isScheduleRowPastEnd(row)) {
+    classes.push("after-day-end-row");
   }
   let attr = "";
   let body = "";
@@ -1136,6 +1780,11 @@ function getScheduleRowData(row) {
   return state.generatedGroups[row.groupIndex] || null;
 }
 
+function isScheduleRowPastEnd(row) {
+  return Number.isFinite(row.endMinutes) &&
+    row.endMinutes > getDayEndMinutes(row.day);
+}
+
 function getGroupOptions(currentRow) {
   const used = new Set(
     state.scheduleRows
@@ -1162,9 +1811,15 @@ function handleScheduleSelectChange(select) {
     return;
   }
   row.groupIndex = selectedValue === "" ? null : Number(selectedValue);
+  const group = getScheduleRowData(row);
+  if (group && Number(group.groups) > 0 && Number.isFinite(row.durationOverrideMinutes)) {
+    group.timePerGroup = row.durationOverrideMinutes / Number(group.groups);
+    recalculateGroupRow(group);
+    delete row.durationOverrideMinutes;
+  }
   persistAppState();
   recalculateScheduleTimes();
-  renderScheduleBuilder();
+  renderGroupsTable();
 }
 
 function handleSpecialDurationChange(input) {
@@ -1215,6 +1870,7 @@ function handleScheduleDragOver(event) {
 
 function handleScheduleDrop(event) {
   event.preventDefault();
+  event.stopPropagation();
   const targetRowId = event.currentTarget.dataset.rowId;
   if (!draggedScheduleRowId || !targetRowId) {
     return;
@@ -1286,13 +1942,26 @@ function getRoundLabel(totalRounds, index) {
 }
 
 function getDayStartLabel(day) {
-  const startTimes = state.competitionInfo.dayStartTimes;
-  const value = startTimes[day - 1] || startTimes[0] || "09:00";
+  const value = getDayStartInputValue(day);
   const minutes = minutesFromTime(value);
   if (minutes === null) {
     return value;
   }
   return timeFromMinutes(minutes);
+}
+
+function getDayStartInputValue(day) {
+  const startTimes = state.competitionInfo.dayStartTimes;
+  return startTimes[day - 1] || startTimes[0] || "08:00";
+}
+
+function getDayEndInputValue(day) {
+  const endTimes = state.competitionInfo.dayEndTimes || [];
+  return endTimes[day - 1] || endTimes[endTimes.length - 1] || "19:00";
+}
+
+function getDayEndMinutes(day) {
+  return minutesFromTime(getDayEndInputValue(day)) ?? 19 * 60;
 }
 
 function formatNumber(value, fractionDigits = 0) {
@@ -1568,10 +2237,21 @@ function normalizeCompetitionInfo(info) {
   const days = Math.min(4, Math.max(1, Number(merged.eventDays) || 1));
   merged.eventDays = days;
   while (merged.dayStartTimes.length < days) {
-    merged.dayStartTimes.push(merged.dayStartTimes[merged.dayStartTimes.length - 1] || "09:00");
+    merged.dayStartTimes.push(merged.dayStartTimes[merged.dayStartTimes.length - 1] || "08:00");
   }
   if (merged.dayStartTimes.length > days) {
     merged.dayStartTimes.length = days;
+  }
+  if (!Array.isArray(merged.dayEndTimes)) {
+    merged.dayEndTimes = [...defaults.dayEndTimes];
+  } else {
+    merged.dayEndTimes = [...merged.dayEndTimes];
+  }
+  while (merged.dayEndTimes.length < days) {
+    merged.dayEndTimes.push(merged.dayEndTimes[merged.dayEndTimes.length - 1] || "19:00");
+  }
+  if (merged.dayEndTimes.length > days) {
+    merged.dayEndTimes.length = days;
   }
   return merged;
 }
@@ -1661,6 +2341,7 @@ function persistAppState() {
     competitionInfo: {
       ...state.competitionInfo,
       dayStartTimes: [...state.competitionInfo.dayStartTimes],
+      dayEndTimes: [...state.competitionInfo.dayEndTimes],
     },
     generatedGroups: state.generatedGroups,
     scheduleRows: state.scheduleRows,
