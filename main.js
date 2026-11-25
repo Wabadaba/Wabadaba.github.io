@@ -130,7 +130,7 @@ dayStartTimesContainer?.addEventListener("input", (event) => {
   if (endInput) updateDayEndTime(Number(endInput.dataset.dayEnd), endInput.value);
 });
 
-function updateDayStartTime(dayIndex, value) {
+function updateDayStartTime(dayIndex, value, renderBuilder = true) {
   if (!Number.isInteger(dayIndex) || dayIndex < 0) return;
   const previousValue = getDayStartInputValue(dayIndex + 1);
   const nextValue = value || "08:00";
@@ -144,14 +144,14 @@ function updateDayStartTime(dayIndex, value) {
   });
   state.competitionInfo.dayStartTimes[dayIndex] = nextValue;
   recalculateScheduleTimes();
-  renderScheduleBuilder();
+  if (renderBuilder) renderScheduleBuilder();
   persistAppState();
 }
 
-function updateDayEndTime(dayIndex, value) {
+function updateDayEndTime(dayIndex, value, renderBuilder = true) {
   if (!Number.isInteger(dayIndex) || dayIndex < 0) return;
   state.competitionInfo.dayEndTimes[dayIndex] = value || "19:00";
-  renderScheduleBuilder();
+  if (renderBuilder) renderScheduleBuilder();
   persistAppState();
 }
 
@@ -792,16 +792,6 @@ function initScheduleBuilderControls() {
   });
 
   scheduleBuilderWrapper?.addEventListener("change", (event) => {
-    const dayStartInput = event.target.closest("[data-schedule-day-start]");
-    if (dayStartInput) {
-      updateDayStartTime(Number(dayStartInput.dataset.scheduleDayStart), dayStartInput.value);
-      return;
-    }
-    const dayEndInput = event.target.closest("[data-schedule-day-end]");
-    if (dayEndInput) {
-      updateDayEndTime(Number(dayEndInput.dataset.scheduleDayEnd), dayEndInput.value);
-      return;
-    }
     const select = event.target.closest("[data-schedule-select]");
     if (select) {
       handleScheduleSelectChange(select);
@@ -826,10 +816,35 @@ function initScheduleBuilderControls() {
   });
 
   scheduleBuilderWrapper?.addEventListener("input", (event) => {
+    const dayStartInput = event.target.closest("[data-schedule-day-start]");
+    if (dayStartInput) {
+      updateDayStartTime(
+        Number(dayStartInput.dataset.scheduleDayStart),
+        dayStartInput.value,
+        false
+      );
+      return;
+    }
+    const dayEndInput = event.target.closest("[data-schedule-day-end]");
+    if (dayEndInput) {
+      updateDayEndTime(Number(dayEndInput.dataset.scheduleDayEnd), dayEndInput.value, false);
+      return;
+    }
     const durationInput = event.target.closest("[data-special-duration]");
     if (durationInput) {
-      handleSpecialDurationChange(durationInput);
+      handleSpecialDurationChange(durationInput, false);
     }
+  });
+
+  scheduleBuilderWrapper?.addEventListener("focusout", (event) => {
+    const timeInput = event.target.closest(
+      "[data-schedule-day-start], [data-schedule-day-end], [data-special-duration]"
+    );
+    if (!timeInput) return;
+    if (event.relatedTarget instanceof Element && scheduleBuilderWrapper.contains(event.relatedTarget)) {
+      return;
+    }
+    renderScheduleBuilder();
   });
 
   downloadScheduleBtn?.addEventListener("click", () => {
@@ -1824,7 +1839,7 @@ function handleScheduleSelectChange(select) {
   renderGroupsTable();
 }
 
-function handleSpecialDurationChange(input) {
+function handleSpecialDurationChange(input, renderBuilder = true) {
   const rowId = input.dataset.rowId;
   const row = state.scheduleRows.find((entry) => entry.id === rowId);
   if (!row || row.type !== "special") {
@@ -1833,7 +1848,7 @@ function handleSpecialDurationChange(input) {
   row.durationMinutes = Math.max(0, Number(input.value) || 0);
   persistAppState();
   recalculateScheduleTimes();
-  renderScheduleBuilder();
+  if (renderBuilder) renderScheduleBuilder();
 }
 
 function attachScheduleRowDragHandlers(tbody) {
